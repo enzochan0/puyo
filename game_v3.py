@@ -123,12 +123,16 @@ def run_game(screen):
 
     balls = [make_ball([], kind="white")]
     to_add = []
+    active = True
 
     while True:
         now = pygame.time.get_ticks()
-
         # --- events ---
         for event in pygame.event.get():
+            if event.type == pygame.WINDOWMINIMIZED:
+                active = False
+            if event.type == pygame.WINDOWRESTORED:
+                active = True
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
@@ -141,77 +145,69 @@ def run_game(screen):
                     )
                 if event.key == pygame.K_TAB:
                     selected_index = (selected_index + 1) % len(BALL_TYPES)
+        if active:
+            # --- age check ---
+            for b in balls:
+                if (
+                    b["kind"] == "white"
+                    and not b["grey"]
+                    and now - b["born"] >= LIFESPAN
+                ):
+                    b["grey"] = True
 
-        # --- age check ---
-        for b in balls:
-            if b["kind"] == "white" and not b["grey"] and now - b["born"] >= LIFESPAN:
-                b["grey"] = True
+            # --- move (clamp to GAME_H not SCREEN_H) ---
+            for b in balls:
+                b["x"] += b["dx"]
+                b["y"] += b["dy"]
+                if b["x"] - radius <= 0:
+                    b["x"] = radius
+                    b["dx"] = abs(b["dx"])
+                if b["x"] + radius >= SCREEN_W:
+                    b["x"] = SCREEN_W - radius
+                    b["dx"] = -abs(b["dx"])
+                if b["y"] - radius <= 0:
+                    b["y"] = radius
+                    b["dy"] = abs(b["dy"])
+                if b["y"] + radius >= GAME_H:
+                    b["y"] = GAME_H - radius
+                    b["dy"] = -abs(b["dy"])
 
-        # --- move (clamp to GAME_H not SCREEN_H) ---
-        for b in balls:
-            b["x"] += b["dx"]
-            b["y"] += b["dy"]
-            if b["x"] - radius <= 0:
-                b["x"] = radius
-                b["dx"] = abs(b["dx"])
-            if b["x"] + radius >= SCREEN_W:
-                b["x"] = SCREEN_W - radius
-                b["dx"] = -abs(b["dx"])
-            if b["y"] - radius <= 0:
-                b["y"] = radius
-                b["dy"] = abs(b["dy"])
-            if b["y"] + radius >= GAME_H:
-                b["y"] = GAME_H - radius
-                b["dy"] = -abs(b["dy"])
+            # --- collisions ---
+            to_remove = set()
+            for i in range(len(balls)):
+                for j in range(i + 1, len(balls)):
+                    a, b = balls[i], balls[j]
+                    nx = b["x"] - a["x"]
+                    ny = b["y"] - a["y"]
+                    dist = math.hypot(nx, ny)
 
-        # --- collisions ---
-        to_remove = set()
-        for i in range(len(balls)):
-            for j in range(i + 1, len(balls)):
-                a, b = balls[i], balls[j]
-                nx = b["x"] - a["x"]
-                ny = b["y"] - a["y"]
-                dist = math.hypot(nx, ny)
+                    if dist < radius * 2 and dist > 0:
+                        nx /= dist
+                        ny /= dist
 
-                if dist < radius * 2 and dist > 0:
-                    nx /= dist
-                    ny /= dist
+                        if a["kind"] == "red" and b["kind"] == "white":
+                            to_remove.add(j)
+                            continue
+                        if b["kind"] == "red" and a["kind"] == "white":
+                            to_remove.add(i)
+                            continue
 
-                    if a["kind"] == "red" and b["kind"] == "white":
-                        to_remove.add(j)
-                        continue
-                    if b["kind"] == "red" and a["kind"] == "white":
-                        to_remove.add(i)
-                        continue
+                        overlap = radius * 2 - dist
+                        a["x"] -= nx * overlap / 2
+                        a["y"] -= ny * overlap / 2
+                        b["x"] += nx * overlap / 2
+                        b["y"] += ny * overlap / 2
 
-                    overlap = radius * 2 - dist
-                    a["x"] -= nx * overlap / 2
-                    a["y"] -= ny * overlap / 2
-                    b["x"] += nx * overlap / 2
-                    b["y"] += ny * overlap / 2
+                        dvx = a["dx"] - b["dx"]
+                        dvy = a["dy"] - b["dy"]
+                        dot = dvx * nx + dvy * ny
+                        if dot > 0:
+                            a["dx"] -= dot * nx
+                            a["dy"] -= dot * ny
+                            b["dx"] += dot * nx
+                            b["dy"] += dot * ny
 
-                    dvx = a["dx"] - b["dx"]
-                    dvy = a["dy"] - b["dy"]
-                    dot = dvx * nx + dvy * ny
-                    if dot > 0:
-                        a["dx"] -= dot * nx
-                        a["dy"] -= dot * ny
-                        b["dx"] += dot * nx
-                        b["dy"] += dot * ny
-
-                    if a["kind"] == "red" and b["kind"] == "red":
-                        if (
-                            len(balls) + len(to_add) < 50
-                            and now - a["last_spawn"] > 2000
-                            and now - b["last_spawn"] > 2000
-                        ):
-                            to_add.append(
-                                ((a["x"] + b["x"]) / 2, (a["y"] + b["y"]) / 2, "red")
-                            )
-                            a["last_spawn"] = b["last_spawn"] = now
-
-                    if a["kind"] == "white" and b["kind"] == "white":
-                        if not a["grey"] and not b["grey"]:
+                        if a["kind"] == "red" and b["kind"] == "red":
                             if (
                                 len(balls) + len(to_add) < 50
                                 and now - a["last_spawn"] > 2000
@@ -221,89 +217,110 @@ def run_game(screen):
                                     (
                                         (a["x"] + b["x"]) / 2,
                                         (a["y"] + b["y"]) / 2,
-                                        "white",
+                                        "red",
                                     )
                                 )
                                 a["last_spawn"] = b["last_spawn"] = now
-                        if a["grey"]:
+
+                        if a["kind"] == "white" and b["kind"] == "white":
+                            if not a["grey"] and not b["grey"]:
+                                if (
+                                    len(balls) + len(to_add) < 50
+                                    and now - a["last_spawn"] > 2000
+                                    and now - b["last_spawn"] > 2000
+                                ):
+                                    to_add.append(
+                                        (
+                                            (a["x"] + b["x"]) / 2,
+                                            (a["y"] + b["y"]) / 2,
+                                            "white",
+                                        )
+                                    )
+                                    a["last_spawn"] = b["last_spawn"] = now
+                            if a["grey"]:
+                                to_remove.add(i)
+                            if b["grey"]:
+                                to_remove.add(j)
+
+                        # --- green vs red: both destroyed ---
+                        if (a["kind"] == "green" and b["kind"] == "red") or (
+                            a["kind"] == "red" and b["kind"] == "green"
+                        ):
                             to_remove.add(i)
-                        if b["grey"]:
                             to_remove.add(j)
+                            continue
 
-                    # --- green vs red: both destroyed ---
-                    if (a["kind"] == "green" and b["kind"] == "red") or \
-                       (a["kind"] == "red" and b["kind"] == "green"):
-                        to_remove.add(i)
-                        to_remove.add(j)
-                        continue
+                        # --- green vs white: reset white's timer, both bounce ---
+                        if a["kind"] == "green" and b["kind"] == "white":
+                            b["born"] = now
+                            b["grey"] = False
+                        if b["kind"] == "green" and a["kind"] == "white":
+                            a["born"] = now
+                            a["grey"] = False
 
-                    # --- green vs white: reset white's timer, both bounce ---
-                    if a["kind"] == "green" and b["kind"] == "white":
-                        b["born"] = now
-                        b["grey"] = False
-                    if b["kind"] == "green" and a["kind"] == "white":
-                        a["born"] = now
-                        a["grey"] = False
-
-                    # --- green vs green: spawn new green ---
-                    if a["kind"] == "green" and b["kind"] == "green":
-                        if (len(balls) + len(to_add) < 50 and
-                            now - a["last_spawn"] > 2000 and
-                            now - b["last_spawn"] > 2000):
-                                to_add.append(((a["x"]+b["x"])/2, (a["y"]+b["y"])/2, "green"))
+                        # --- green vs green: spawn new green ---
+                        if a["kind"] == "green" and b["kind"] == "green":
+                            if (
+                                len(balls) + len(to_add) < 50
+                                and now - a["last_spawn"] > 2000
+                                and now - b["last_spawn"] > 2000
+                            ):
+                                to_add.append(
+                                    (
+                                        (a["x"] + b["x"]) / 2,
+                                        (a["y"] + b["y"]) / 2,
+                                        "green",
+                                    )
+                                )
                                 a["last_spawn"] = b["last_spawn"] = now
-                    
-                    # --- green vs white (including grey): reset aging timer, both bounce ---
-                    if a["kind"] == "green" and b["kind"] == "white":
-                        b["born"] = now
-                        b["grey"] = False
-                    if b["kind"] == "green" and a["kind"] == "white":
-                        a["born"] = now
-                        a["grey"] = False
 
-        for i in sorted(to_remove, reverse=True):
-            balls.pop(i)
-        for sx, sy, kind in to_add:
-            balls.append(make_ball(balls, x=sx, y=sy, kind=kind))
-        to_add.clear()
+            for i in sorted(to_remove, reverse=True):
+                balls.pop(i)
+            for sx, sy, kind in to_add:
+                balls.append(make_ball(balls, x=sx, y=sy, kind=kind))
+            to_add.clear()
 
-        # --- draw ---
-        screen.fill(BLACK)
-        for b in balls:
-            if b["kind"] == "red":
-                color = RED
-            elif b["kind"] == "green":
-                color = GREEN
-            elif b["grey"]:
-                color = GREY
+            # --- draw ---
+            screen.fill(BLACK)
+            for b in balls:
+                if b["kind"] == "red":
+                    color = RED
+                elif b["kind"] == "green":
+                    color = GREEN
+                elif b["grey"]:
+                    color = GREY
+                else:
+                    color = WHITE
+                pygame.draw.circle(screen, color, (int(b["x"]), int(b["y"])), radius)
+
+            # population status top left
+            white_count = sum(
+                1 for b in balls if b["kind"] == "white" and not b["grey"]
+            )
+            grey_count = sum(1 for b in balls if b["kind"] == "white" and b["grey"])
+            red_count = sum(1 for b in balls if b["kind"] == "red")
+            green_count = sum(1 for b in balls if b["kind"] == "green")
+            total = len(balls)
+
+            if total < 5:
+                status, sc = "population too low...", (100, 180, 255)
+            elif total <= 20:
+                status, sc = "population healthy", (100, 255, 100)
+            elif total <= 35:
+                status, sc = "getting crowded...", (255, 200, 50)
             else:
-                color = WHITE
-            pygame.draw.circle(screen, color, (int(b["x"]), int(b["y"])), radius)
+                status, sc = "overpopulated!", (255, 80, 80)
 
-        # population status top left
-        white_count = sum(1 for b in balls if b["kind"] == "white" and not b["grey"])
-        grey_count = sum(1 for b in balls if b["kind"] == "white" and b["grey"])
-        red_count = sum(1 for b in balls if b["kind"] == "red")
-        green_count = sum(1 for b in balls if b["kind"] == "green")
-        total = len(balls)
+            screen.blit(font.render(status, True, sc), (10, 10))
+            screen.blit(
+                font.render(
+                    f"W {white_count + grey_count}  R {red_count}  Gr {green_count}",
+                    True,
+                    (60, 60, 60),
+                ),
+                (10, 30),
+            )
 
-        if total < 5:
-            status, sc = "population too low...", (100, 180, 255)
-        elif total <= 20:
-            status, sc = "population healthy", (100, 255, 100)
-        elif total <= 35:
-            status, sc = "getting crowded...", (255, 200, 50)
-        else:
-            status, sc = "overpopulated!", (255, 80, 80)
-
-        screen.blit(font.render(status, True, sc), (10, 10))
-        screen.blit(
-            font.render(
-                f"W {white_count+grey_count}  R {red_count}  Gr {green_count}", True, (60, 60, 60)
-            ),
-            (10, 30),
-        )
-
-        draw_bottom_bar()
-        pygame.display.flip()
+            draw_bottom_bar()
+            pygame.display.flip()
         clock.tick(60)
