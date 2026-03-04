@@ -13,7 +13,7 @@ def run_game(screen):
     clock  = pygame.time.Clock()
     font   = pygame.font.SysFont("Arial", 20)
     radius = 12
-    LIFESPAN = 10000  # 10 seconds in milliseconds
+    LIFESPAN = 20000  # 20 seconds in milliseconds
 
     def make_ball(balls, x=None, y=None):
         attempts = 0
