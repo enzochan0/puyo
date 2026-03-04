@@ -12,18 +12,30 @@ def run_game(screen):
     YELLOW = (255, 230,  50)
 
     clock    = pygame.time.Clock()
-    font     = pygame.font.SysFont("Arial", 20)
-    font_big = pygame.font.SysFont("Arial", 28, bold=True)
+    font     = pygame.font.SysFont("Consolas", 16)
+    font_card = pygame.font.SysFont("Consolas", 14, bold=True)
     radius   = 12
     LIFESPAN = 20000
 
-    selected = "white"  # currently selected ball type to spawn
+    # --- ball types registry, add new entries here later ---
+    BALL_TYPES = [
+        {"kind": "white", "color": WHITE,  "label": "WHITE"},
+        {"kind": "red",   "color": RED,    "label": "RED"},
+    ]
+    selected_index = 0
+
+    # --- UI constants ---
+    BAR_H       = 110           # height of bottom HUD bar
+    CARD_W      = 80
+    CARD_H      = 80
+    CARD_PAD    = 16            # gap between cards
+    GAME_H      = SCREEN_H - BAR_H   # playable area height
 
     def make_ball(balls, x=None, y=None, kind="white"):
         attempts = 0
         while True:
             bx = float(x if x is not None else random.randint(radius, SCREEN_W - radius))
-            by = float(y if y is not None else random.randint(radius, SCREEN_H - radius))
+            by = float(y if y is not None else random.randint(radius, GAME_H - radius))
             dx = float(random.choice([-2, -1.5, 1.5, 2]))
             dy = float(random.choice([-2, -1.5, 1.5, 2]))
             if attempts > 50 or all(math.hypot(bx - b["x"], by - b["y"]) > radius * 2 for b in balls):
@@ -36,6 +48,57 @@ def run_game(screen):
                     "last_spawn": 0
                 }
             attempts += 1
+
+    def draw_bottom_bar():
+        # dark bar background
+        bar_rect = pygame.Rect(0, GAME_H, SCREEN_W, BAR_H)
+        pygame.draw.rect(screen, (15, 15, 15), bar_rect)
+        pygame.draw.line(screen, (50, 50, 50), (0, GAME_H), (SCREEN_W, GAME_H), 1)
+
+        # center the row of cards
+        total_cards_w = len(BALL_TYPES) * CARD_W + (len(BALL_TYPES) - 1) * CARD_PAD
+        start_x = (SCREEN_W - total_cards_w) // 2
+        card_y  = GAME_H + 8
+
+        for idx, bt in enumerate(BALL_TYPES):
+            cx = start_x + idx * (CARD_W + CARD_PAD)
+            is_selected = (idx == selected_index)
+
+            # card surface with alpha for transparency effect
+            card_surf = pygame.Surface((CARD_W, CARD_H), pygame.SRCALPHA)
+            if is_selected:
+                card_surf.fill((40, 40, 40, 240))
+            else:
+                card_surf.fill((20, 20, 20, 120))
+
+            # ball circle on card
+            ball_cx = CARD_W // 2
+            ball_cy = CARD_H // 2 - 8
+            ball_color = bt["color"]
+            if not is_selected:
+                # dim the color for unselected
+                ball_color = tuple(max(0, c // 3) for c in bt["color"])
+            pygame.draw.circle(card_surf, ball_color, (ball_cx, ball_cy), radius)
+
+            # label under the ball
+            label_color = WHITE if is_selected else (70, 70, 70)
+            label = font_card.render(bt["label"], True, label_color)
+            label_rect = label.get_rect(centerx=CARD_W // 2, top=ball_cy + radius + 6)
+            card_surf.blit(label, label_rect)
+
+            screen.blit(card_surf, (cx, card_y))
+
+            # highlight border for selected
+            if is_selected:
+                pygame.draw.rect(screen, bt["color"],
+                                 (cx, card_y, CARD_W, CARD_H), 2, border_radius=4)
+            else:
+                pygame.draw.rect(screen, (40, 40, 40),
+                                 (cx, card_y, CARD_W, CARD_H), 1, border_radius=4)
+
+        # hint text at very bottom
+        hint = font.render("SPACE → spawn       TAB → switch       ESC → menu", True, YELLOW)
+        screen.blit(hint, hint.get_rect(centerx=SCREEN_W // 2, bottom=SCREEN_H - 1))
 
     balls  = [make_ball([], kind="white")]
     to_add = []
@@ -51,16 +114,16 @@ def run_game(screen):
                 if event.key == pygame.K_ESCAPE:
                     return
                 if event.key == pygame.K_SPACE:
-                    balls.append(make_ball(balls, kind=selected))
+                    balls.append(make_ball(balls, kind=BALL_TYPES[selected_index]["kind"]))
                 if event.key == pygame.K_TAB:
-                    selected = "red" if selected == "white" else "white"
+                    selected_index = (selected_index + 1) % len(BALL_TYPES)
 
-        # --- age check: white → grey after 20s (red balls don't age) ---
+        # --- age check ---
         for b in balls:
             if b["kind"] == "white" and not b["grey"] and now - b["born"] >= LIFESPAN:
                 b["grey"] = True
 
-        # --- move ---
+        # --- move (clamp to GAME_H not SCREEN_H) ---
         for b in balls:
             b["x"] += b["dx"]
             b["y"] += b["dy"]
@@ -70,8 +133,8 @@ def run_game(screen):
                 b["x"] = SCREEN_W - radius;  b["dx"] = -abs(b["dx"])
             if b["y"] - radius <= 0:
                 b["y"] = radius;             b["dy"] = abs(b["dy"])
-            if b["y"] + radius >= SCREEN_H:
-                b["y"] = SCREEN_H - radius;  b["dy"] = -abs(b["dy"])
+            if b["y"] + radius >= GAME_H:
+                b["y"] = GAME_H - radius;    b["dy"] = -abs(b["dy"])
 
         # --- collisions ---
         to_remove = set()
@@ -85,15 +148,11 @@ def run_game(screen):
                 if dist < radius * 2 and dist > 0:
                     nx /= dist;  ny /= dist
 
-                    # --- red vs white: white despawns, red passes through ---
                     if a["kind"] == "red" and b["kind"] != "red":
-                        to_remove.add(j)
-                        continue
+                        to_remove.add(j);  continue
                     if b["kind"] == "red" and a["kind"] != "red":
-                        to_remove.add(i)
-                        continue
+                        to_remove.add(i);  continue
 
-                    # --- everything else: push apart + velocity swap ---
                     overlap = radius * 2 - dist
                     a["x"] -= nx * overlap / 2;  a["y"] -= ny * overlap / 2
                     b["x"] += nx * overlap / 2;  b["y"] += ny * overlap / 2
@@ -105,30 +164,20 @@ def run_game(screen):
                         a["dx"] -= dot * nx;  a["dy"] -= dot * ny
                         b["dx"] += dot * nx;  b["dy"] += dot * ny
 
-                    # --- red vs red: spawn new red ---
                     if a["kind"] == "red" and b["kind"] == "red":
                         if (len(balls) + len(to_add) < 50 and
                             now - a["last_spawn"] > 2000 and
                             now - b["last_spawn"] > 2000):
-                                sx = (a["x"] + b["x"]) / 2
-                                sy = (a["y"] + b["y"]) / 2
-                                to_add.append((sx, sy, "red"))
-                                a["last_spawn"] = now
-                                b["last_spawn"] = now
+                                to_add.append(((a["x"]+b["x"])/2, (a["y"]+b["y"])/2, "red"))
+                                a["last_spawn"] = b["last_spawn"] = now
 
-                    # --- white vs white: spawn new white ---
                     if a["kind"] == "white" and b["kind"] == "white":
                         if not a["grey"] and not b["grey"]:
                             if (len(balls) + len(to_add) < 50 and
                                 now - a["last_spawn"] > 2000 and
                                 now - b["last_spawn"] > 2000):
-                                    sx = (a["x"] + b["x"]) / 2
-                                    sy = (a["y"] + b["y"]) / 2
-                                    to_add.append((sx, sy, "white"))
-                                    a["last_spawn"] = now
-                                    b["last_spawn"] = now
-
-                        # grey white destroyed on collision
+                                    to_add.append(((a["x"]+b["x"])/2, (a["y"]+b["y"])/2, "white"))
+                                    a["last_spawn"] = b["last_spawn"] = now
                         if a["grey"]: to_remove.add(i)
                         if b["grey"]: to_remove.add(j)
 
@@ -149,29 +198,24 @@ def run_game(screen):
                 color = WHITE
             pygame.draw.circle(screen, color, (int(b["x"]), int(b["y"])), radius)
 
-        # population status
+        # population status top left
         white_count = sum(1 for b in balls if b["kind"] == "white" and not b["grey"])
         grey_count  = sum(1 for b in balls if b["kind"] == "white" and b["grey"])
         red_count   = sum(1 for b in balls if b["kind"] == "red")
         total       = len(balls)
 
         if total < 5:
-            status, status_color = "population too low...", (100, 180, 255)
+            status, sc = "population too low...", (100, 180, 255)
         elif total <= 20:
-            status, status_color = "population healthy",   (100, 255, 100)
+            status, sc = "population healthy",   (100, 255, 100)
         elif total <= 35:
-            status, status_color = "getting crowded...",   (255, 200,  50)
+            status, sc = "getting crowded...",   (255, 200,  50)
         else:
-            status, status_color = "overpopulated!",       (255,  80,  80)
+            status, sc = "overpopulated!",       (255,  80,  80)
 
-        sel_color = RED if selected == "red" else WHITE
-        sel_label = font_big.render(f"[ {selected} ]", True, sel_color)
+        screen.blit(font.render(status, True, sc), (10, 10))
+        screen.blit(font.render(f"W {white_count}  G {grey_count}  R {red_count}", True, (60, 60, 60)), (10, 30))
 
-        hint   = font.render(f"SPACE → spawn   TAB → switch   white: {white_count}  grey: {grey_count}  red: {red_count}   ESC → menu", True, YELLOW)
-        pop    = font.render(status, True, status_color)
-        screen.blit(hint,      (10, 10))
-        screen.blit(pop,       (10, 35))
-        screen.blit(sel_label, (10, 60))
-
+        draw_bottom_bar()
         pygame.display.flip()
         clock.tick(60)
