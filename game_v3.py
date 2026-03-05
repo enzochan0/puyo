@@ -209,7 +209,7 @@ def run_game(screen):
 
                         if a["kind"] == "red" and b["kind"] == "red":
                             if (
-                                len(balls) + len(to_add) < 50
+                                len(balls) + len(to_add) < 200
                                 and now - a["last_spawn"] > 2000
                                 and now - b["last_spawn"] > 2000
                             ):
@@ -225,7 +225,7 @@ def run_game(screen):
                         if a["kind"] == "white" and b["kind"] == "white":
                             if not a["grey"] and not b["grey"]:
                                 if (
-                                    len(balls) + len(to_add) < 50
+                                    len(balls) + len(to_add) < 200
                                     and now - a["last_spawn"] > 2000
                                     and now - b["last_spawn"] > 2000
                                 ):
@@ -261,7 +261,7 @@ def run_game(screen):
                         # --- green vs green: spawn new green ---
                         if a["kind"] == "green" and b["kind"] == "green":
                             if (
-                                len(balls) + len(to_add) < 50
+                                len(balls) + len(to_add) < 200
                                 and now - a["last_spawn"] > 2000
                                 and now - b["last_spawn"] > 2000
                             ):
