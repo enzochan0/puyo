@@ -4,6 +4,8 @@ from game_v1 import run_game as run_v1
 from game_v2 import run_game as run_v2
 from game_v3 import run_game as run_v3
 
+VERSION = "1.0.0"
+
 pygame.init()
 
 SCREEN_W, SCREEN_H = 800, 600
@@ -45,6 +47,9 @@ def main_menu():
         screen.fill(BLACK)
         title = font_title.render("My Game", True, WHITE)
         screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 160)))
+
+        verion = font_label.render(f"v{VERSION}", True, DIM)
+        screen.blit(verion, (10, SCREEN_H - 25))
 
         mx, my = pygame.mouse.get_pos()
         draw_button("Play", play_rect, play_rect.collidepoint(mx, my))
